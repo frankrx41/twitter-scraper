@@ -5,7 +5,8 @@ import (
 )
 
 type result struct {
-	Typename string `json:"__typename"`
+	Tweet    *result `json:"tweet"`
+	Typename string  `json:"__typename"`
 	Core     struct {
 		UserResults struct {
 			Result struct {
@@ -96,19 +97,40 @@ type timelineV2 struct {
 	} `json:"data"`
 }
 
+func PushTweet(result result, tweets []*Tweet, typename string) []*Tweet {
+	if typename == "" {
+		typename = result.Typename
+	}
+	if typename == "Tweet" || typename == "TweetWithVisibilityResults" {
+		if tweet := result.parse(); tweet != nil {
+			tweets = append(tweets, tweet)
+		}
+	}
+	if result.Tweet != nil {
+		tweets = PushTweet(*result.Tweet, tweets, typename)
+	}
+	return tweets
+}
+
 func (timeline *timelineV2) parseTweets() ([]*Tweet, string) {
 	var cursor string
 	var tweets []*Tweet
 	for _, instruction := range timeline.Data.User.Result.TimelineV2.Timeline.Instructions {
+		entry := instruction.Entry
+		tweets = PushTweet(entry.Content.ItemContent.TweetResults.Result, tweets, "")
+		for _, item := range entry.Content.Items {
+			tweets = PushTweet(item.Item.ItemContent.TweetResults.Result, tweets, "")
+		}
+
 		for _, entry := range instruction.Entries {
 			if entry.Content.CursorType == "Bottom" {
 				cursor = entry.Content.Value
 				continue
 			}
-			if entry.Content.ItemContent.TweetResults.Result.Typename == "Tweet" {
-				if tweet := entry.Content.ItemContent.TweetResults.Result.parse(); tweet != nil {
-					tweets = append(tweets, tweet)
-				}
+
+			tweets = PushTweet(entry.Content.ItemContent.TweetResults.Result, tweets, "")
+			for _, item := range entry.Content.Items {
+				tweets = PushTweet(item.Item.ItemContent.TweetResults.Result, tweets, "")
 			}
 		}
 	}
